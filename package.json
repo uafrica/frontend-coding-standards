@@ -1,0 +1,29 @@
+{
+  "name": "bob-group-frontend-coding-standards",
+  "version": "1.0.0",
+  "description": "Script to check that frontend code follows coding standards",
+  "main": "index.js",
+  "devDependencies": {
+    "@types/node": "^20.9.0",
+    "typescript": "^5.2.2"
+  },
+  "dependencies": {
+    "yargs": "^17.7.2"
+  },
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/uafrica/frontend-coding-standards.git"
+  },
+  "author": {
+    "name": "Melissa Greyling",
+    "email": "melissa@bob.co.za"
+  },
+  "license": "BSD-3-Clause",
+  "bugs": {
+    "url": "https://github.com/uafrica/frontend-coding-standards/issues"
+  },
+  "homepage": "https://github.com/uafrica/frontend-coding-standards#readme"
+}
