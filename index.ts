@@ -44,8 +44,9 @@ let warnings: {
   forgottenTodos: [],
 };
 
-const camelCaseRegex = /^[a-z][A-Za-z]*$/;
-const upperCamelCaseRegex = /^[A-Z][A-Za-z]*$/;
+const camelCaseRegex = /^[a-z][A-Za-z0-9]*$/;
+const upperCamelCaseRegex = /^[A-Z][A-Za-z0-9]*$/;
+const upperSnakeCaseRegex = /^[A-Z0-9_]+$/;
 
 function writeOutput(
   type: "success" | "error" | "warning" | "info",
@@ -68,6 +69,8 @@ function isComponentFile(data: string, filePath: string) {
   return (
     filePath.endsWith(".tsx") &&
     !isInterfaceFile(filePath) &&
+    (filePath.indexOf("/pages/") > -1 ||
+      filePath.indexOf("/components/") > -1) &&
     data.indexOf("function render") > -1
   );
 }
@@ -95,7 +98,7 @@ function processFileContents(folderPath: any, file: any) {
           // data = makeCommentsSentenceCase(data); // todo needs more testing
 
           // Checks for files
-          // checkVariableNamingConventions(data, filePath); // todo needs testing
+          checkVariableNamingConventions(data, file, filePath);
           checkForRenderFunction(data, filePath);
           checkForBooleanTruthyDetection(data, filePath);
           checkForClassComponent(data, filePath);
@@ -226,9 +229,12 @@ function checkComponentNamingConventions(
   }
 }
 
-function checkVariableNamingConventions(data: string, filePath: string) {
-  // CRITERIA: Variables should be camel case
-  // Todo: needs work - some consts are SOME_CONSTANT
+function checkVariableNamingConventions(
+  data: string,
+  file: string,
+  filePath: string
+) {
+  // CRITERIA: Variables should be camel case or upper snake case
   const variableRegex = /\b(?:let|const|var)\s+([a-zA-Z_$][a-zA-Z0-9_$]*)\b/g;
 
   const variableNames = [];
@@ -239,7 +245,12 @@ function checkVariableNamingConventions(data: string, filePath: string) {
   }
 
   variableNames.forEach((variableName) => {
-    if (!camelCaseRegex.test(variableName)) {
+    if (
+      !camelCaseRegex.test(variableName) &&
+      !upperSnakeCaseRegex.test(variableName) &&
+      variableName !== file.split(".tsx").join("") &&
+      !(filePath.includes("/Routes") && variableName.includes("Page"))
+    ) {
       warnings.incorrectlyNamedVariables.push({
         file: filePath,
         error: variableName,
@@ -369,7 +380,7 @@ async function run() {
       warnings.incorrectlyNamedVariables.length > 0 &&
         logErrors(
           "warning",
-          "Variables that are not camel case",
+          "Variables that are not camel case or upper snake case",
           warnings.incorrectlyNamedVariables
         );
 

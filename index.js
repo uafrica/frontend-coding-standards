@@ -34,8 +34,9 @@ let warnings = {
     classComponents: [],
     forgottenTodos: [],
 };
-const camelCaseRegex = /^[a-z][A-Za-z]*$/;
-const upperCamelCaseRegex = /^[A-Z][A-Za-z]*$/;
+const camelCaseRegex = /^[a-z][A-Za-z0-9]*$/;
+const upperCamelCaseRegex = /^[A-Z][A-Za-z0-9]*$/;
+const upperSnakeCaseRegex = /^[A-Z0-9_]+$/;
 function writeOutput(type, content) {
     let colors = {
         success: "\x1b[32m",
@@ -51,6 +52,8 @@ function isInterfaceFile(filePath) {
 function isComponentFile(data, filePath) {
     return (filePath.endsWith(".tsx") &&
         !isInterfaceFile(filePath) &&
+        (filePath.indexOf("/pages/") > -1 ||
+            filePath.indexOf("/components/") > -1) &&
         data.indexOf("function render") > -1);
 }
 function processFileContents(folderPath, file) {
@@ -74,7 +77,7 @@ function processFileContents(folderPath, file) {
                     data = addRenderMethodsComment(data, filePath);
                     // data = makeCommentsSentenceCase(data); // todo needs more testing
                     // Checks for files
-                    // checkVariableNamingConventions(data, filePath); // todo needs testing
+                    checkVariableNamingConventions(data, file, filePath);
                     checkForRenderFunction(data, filePath);
                     checkForBooleanTruthyDetection(data, filePath);
                     checkForClassComponent(data, filePath);
@@ -185,9 +188,8 @@ function checkComponentNamingConventions(data, file, filePath) {
         }
     }
 }
-function checkVariableNamingConventions(data, filePath) {
-    // CRITERIA: Variables should be camel case
-    // Todo: needs work - some consts are SOME_CONSTANT
+function checkVariableNamingConventions(data, file, filePath) {
+    // CRITERIA: Variables should be camel case or upper snake case
     const variableRegex = /\b(?:let|const|var)\s+([a-zA-Z_$][a-zA-Z0-9_$]*)\b/g;
     const variableNames = [];
     let match;
@@ -195,7 +197,10 @@ function checkVariableNamingConventions(data, filePath) {
         variableNames.push(match[1]);
     }
     variableNames.forEach((variableName) => {
-        if (!camelCaseRegex.test(variableName)) {
+        if (!camelCaseRegex.test(variableName) &&
+            !upperSnakeCaseRegex.test(variableName) &&
+            variableName !== file.split(".tsx").join("") &&
+            !(filePath.includes("/Routes") && variableName.includes("Page"))) {
             warnings.incorrectlyNamedVariables.push({
                 file: filePath,
                 error: variableName,
@@ -281,7 +286,7 @@ function run() {
             warnings.filesMissingRenderFunction.length > 0 &&
                 logErrors("warning", "Missing render function", warnings.filesMissingRenderFunction);
             warnings.incorrectlyNamedVariables.length > 0 &&
-                logErrors("warning", "Variables that are not camel case", warnings.incorrectlyNamedVariables);
+                logErrors("warning", "Variables that are not camel case or upper snake case", warnings.incorrectlyNamedVariables);
             warnings.incorrectTruthy.length > 0 &&
                 logErrors("warning", "Prefer boolean truthy detection Boolean(x) over double !!", warnings.incorrectTruthy);
             warnings.classComponents.length > 0 &&
