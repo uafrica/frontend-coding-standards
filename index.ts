@@ -197,14 +197,14 @@ function checkComponentNamingConventions(
 ) {
   if (filePath.indexOf("/pages") > -1) {
     // CRITERIA: Page component file name should follow the pattern <SomePageName>Page.tsx
-    const pageComponentFileNamePattern = /^[A-Z][A-Za-z]*\Page\.tsx$/;
+    const pageComponentFileNamePattern = /^[A-Z][A-Za-z0-9]*\Page\.tsx$/;
 
     if (!pageComponentFileNamePattern.test(file)) {
       errors.incorrectComponentFileNames.push({ file });
     }
   } else if (filePath.indexOf("/components") > -1) {
     // CRITERIA: Component file name should follow the pattern <SomeComponentName>.tsx
-    const componentFileNamePattern = /^[A-Z][A-Za-z]*\.tsx$/;
+    const componentFileNamePattern = /^[A-Z][A-Za-z0-9]*\.tsx$/;
 
     if (!componentFileNamePattern.test(file)) {
       errors.incorrectComponentFileNames.push({ file });
@@ -213,7 +213,7 @@ function checkComponentNamingConventions(
 
   if (filePath.indexOf("/pages") > -1 || filePath.indexOf("/components") > -1) {
     // CRITERIA: Component name should be upper camel case
-    const componentNamePattern = /function\s+([a-zA-Z]*)\(/;
+    const componentNamePattern = /function\s+([a-zA-Z0-9]*)\(/;
     let match = componentNamePattern.exec(data);
     if (match) {
       let componentName = match[1];

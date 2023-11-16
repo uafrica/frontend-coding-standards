@@ -1,6 +1,6 @@
 {
   "name": "bob-group-frontend-coding-standards",
-  "version": "1.0.1",
+  "version": "1.0.2",
   "description": "Script to check that frontend code follows coding standards",
   "main": "index.js",
   "devDependencies": {
