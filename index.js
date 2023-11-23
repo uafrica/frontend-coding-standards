@@ -30,6 +30,8 @@ let errors = {
 let warnings = {
     filesMissingRenderFunction: [],
     incorrectlyNamedVariables: [],
+    incorrectlyNamedStateVariables: [],
+    incorrectlyNamedShowModalVariables: [],
     incorrectTruthy: [],
     classComponents: [],
     forgottenTodos: [],
@@ -37,6 +39,23 @@ let warnings = {
 const camelCaseRegex = /^[a-z][A-Za-z0-9]*$/;
 const upperCamelCaseRegex = /^[A-Z][A-Za-z0-9]*$/;
 const upperSnakeCaseRegex = /^[A-Z0-9_]+$/;
+function keyToHumanReadable(key) {
+    if (!key)
+        return "";
+    // @ts-ignore
+    let keyHumanReadable = key.replaceAll("_", " ");
+    keyHumanReadable = keyHumanReadable.replaceAll("sender", "collection");
+    keyHumanReadable = keyHumanReadable.replaceAll("receiver", "delivery");
+    keyHumanReadable = keyHumanReadable.replaceAll("-", " ");
+    // camel case to sentence case
+    keyHumanReadable = keyHumanReadable.replace(/([A-Z])/g, " $1").trim();
+    let sentenceCaseKey = keyHumanReadable.charAt(0).toUpperCase() +
+        keyHumanReadable.slice(1).toLowerCase();
+    sentenceCaseKey = sentenceCaseKey.replaceAll("Bob box", "Bob Box");
+    sentenceCaseKey = sentenceCaseKey.replaceAll("Bob pay", "Bob Pay");
+    sentenceCaseKey = sentenceCaseKey.replaceAll("Bob go", "Bob Go");
+    return sentenceCaseKey;
+}
 function writeOutput(type, content) {
     let colors = {
         success: "\x1b[32m",
@@ -75,9 +94,12 @@ function processFileContents(folderPath, file) {
                     // Automatic updates to files
                     data = replaceBracketPattern(data);
                     data = addRenderMethodsComment(data, filePath);
+                    data = fixLodashImports(data, filePath);
                     // data = makeCommentsSentenceCase(data); // todo needs more testing
                     // Checks for files
+                    checkStateVariableNamingConventions(data, file, filePath);
                     checkVariableNamingConventions(data, file, filePath);
+                    // checkShowModalNamingConventions(data, file, filePath); // todo needs to be defined better
                     checkForRenderFunction(data, filePath);
                     checkForBooleanTruthyDetection(data, filePath);
                     checkForClassComponent(data, filePath);
@@ -188,6 +210,25 @@ function checkComponentNamingConventions(data, file, filePath) {
         }
     }
 }
+function checkStateVariableNamingConventions(data, file, filePath) {
+    // CRITERIA: State variables should be camel case
+    const stateVariableRegex = /(?<=\[\s*)(\w+)(?=\s*,\s*set\w+\s*\])/gm;
+    const variableNames = [];
+    let match;
+    while ((match = stateVariableRegex.exec(data)) !== null) {
+        variableNames.push(match[1]);
+    }
+    variableNames.forEach((variableName) => {
+        if (!camelCaseRegex.test(variableName) &&
+            variableName !== file.split(".tsx").join("") &&
+            !(filePath.includes("/Routes") && variableName.includes("Page"))) {
+            warnings.incorrectlyNamedStateVariables.push({
+                file: filePath,
+                error: variableName,
+            });
+        }
+    });
+}
 function checkVariableNamingConventions(data, file, filePath) {
     // CRITERIA: Variables should be camel case or upper snake case
     const variableRegex = /\b(?:let|const|var)\s+([a-zA-Z_$][a-zA-Z0-9_$]*)\b/g;
@@ -208,6 +249,23 @@ function checkVariableNamingConventions(data, file, filePath) {
         }
     });
 }
+function checkShowModalNamingConventions(data, file, filePath) {
+    // CRITERIA: When naming state variables to show/hide modals, make use of const [modalToShow, setModalToShow] = useState<string>("") or const [shouldShowXModal, setShouldShowXModal] = useState<boolean>(false)
+    const stateVariableRegex = /(?<=\[\s*)(\w+)(?=\s*,\s*set\w+\s*\])/gm;
+    let match;
+    const shouldShowXModalRegex = /^shouldShow[A-Z][a-zA-Z]*Modal$/;
+    while ((match = stateVariableRegex.exec(data)) !== null) {
+        let stateVariableName = match[1];
+        if (stateVariableName.toLowerCase().includes("modal") &&
+            !shouldShowXModalRegex.test(stateVariableName) &&
+            stateVariableName !== "modalToShow") {
+            warnings.incorrectlyNamedShowModalVariables.push({
+                file: filePath,
+                error: stateVariableName,
+            });
+        }
+    }
+}
 function addRenderMethodsComment(data, filePath) {
     // CRITERIA: All components should have a comment indicating where the render methods section starts
     let renderMethodsCommentText = `/* --------------------------------*/
@@ -222,6 +280,26 @@ function addRenderMethodsComment(data, filePath) {
                 data = part1 + renderMethodsCommentText + "\n" + "\n" + part2;
             }
         }
+    }
+    return data;
+}
+function fixLodashImports(data, filePath) {
+    let importAll = 'import _ from "lodash";';
+    if (data.includes(importAll)) {
+        const lodashFunctionRegex = /_\.\w+[A-Za-z]*\(/g;
+        const lodashFunctions = data.match(lodashFunctionRegex);
+        let functionNames = [];
+        lodashFunctions === null || lodashFunctions === void 0 ? void 0 : lodashFunctions.forEach((functionString) => {
+            let functionName = functionString.substring(2, functionString.length - 1);
+            functionNames.push(functionName);
+            data = data.replace(functionString, functionName + "(");
+            let newImport = `import ${functionName} from "lodash/${functionName}";`;
+            if (!data.includes(newImport)) {
+                // prevent newImport from being added multiple times
+                data = data.replace(importAll, `${importAll}\n${newImport}`);
+            }
+        });
+        data = data.replace(importAll, "");
     }
     return data;
 }
@@ -275,29 +353,19 @@ function run() {
         writeOutput("info", "Running code checker...");
         return readTSXFilesRecursively(folderPath)
             .then(() => {
-            errors.incorrectInterfaceFileNames.length > 0 &&
-                logErrors("error", "Interface files named incorrectly", errors.incorrectInterfaceFileNames);
-            errors.incorrectInterfaceNames.length > 0 &&
-                logErrors("error", "Interfaces named incorrectly", errors.incorrectInterfaceNames);
-            errors.incorrectComponentFileNames.length > 0 &&
-                logErrors("error", "Component files named incorrectly", errors.incorrectComponentFileNames);
-            errors.incorrectComponentNames.length > 0 &&
-                logErrors("error", "Components named incorrectly", errors.incorrectComponentNames);
-            warnings.filesMissingRenderFunction.length > 0 &&
-                logErrors("warning", "Missing render function", warnings.filesMissingRenderFunction);
-            warnings.incorrectlyNamedVariables.length > 0 &&
-                logErrors("warning", "Variables that are not camel case or upper snake case", warnings.incorrectlyNamedVariables);
-            warnings.incorrectTruthy.length > 0 &&
-                logErrors("warning", "Prefer boolean truthy detection Boolean(x) over double !!", warnings.incorrectTruthy);
-            warnings.classComponents.length > 0 &&
-                logErrors("warning", "Class components should be functional components", warnings.classComponents);
-            warnings.forgottenTodos.length > 0 &&
-                logErrors("warning", "Forgotten Todos", warnings.forgottenTodos);
             let errorCount = 0;
             Object.keys(errors).forEach((key) => {
-                var _a;
                 // @ts-ignore
-                errorCount += (_a = errors[key]) === null || _a === void 0 ? void 0 : _a.length;
+                let errorArray = errors[key];
+                errorCount += errorArray === null || errorArray === void 0 ? void 0 : errorArray.length;
+                errorArray.length > 0 &&
+                    logErrors("error", keyToHumanReadable(key), errorArray);
+            });
+            Object.keys(warnings).forEach((key) => {
+                // @ts-ignore
+                let warningArray = warnings[key];
+                warningArray.length > 0 &&
+                    logErrors("warning", keyToHumanReadable(key), warningArray);
             });
             if (errorCount === 0) {
                 writeOutput("info", "Done running code checker.");
