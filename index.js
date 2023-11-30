@@ -26,6 +26,7 @@ let errors = {
     incorrectInterfaceFileNames: [],
     incorrectComponentNames: [],
     incorrectComponentFileNames: [],
+    missingFontawesomeIconImports: [],
 };
 let warnings = {
     filesMissingRenderFunction: [],
@@ -39,6 +40,8 @@ let warnings = {
 const camelCaseRegex = /^[a-z][A-Za-z0-9]*$/;
 const upperCamelCaseRegex = /^[A-Z][A-Za-z0-9]*$/;
 const upperSnakeCaseRegex = /^[A-Z0-9_]+$/;
+let allImportNames = [];
+let setupIconsContent;
 function keyToHumanReadable(key) {
     if (!key)
         return "";
@@ -95,11 +98,12 @@ function processFileContents(folderPath, file) {
                     data = replaceBracketPattern(data);
                     data = addRenderMethodsComment(data, filePath);
                     data = fixLodashImports(data, filePath);
-                    // data = makeCommentsSentenceCase(data); // todo needs more testing
-                    // Checks for files
+                    data = listMissingFontawesomeImports(data);
+                    // // data = makeCommentsSentenceCase(data); // todo needs more testing
+                    // // Checks for files
                     checkStateVariableNamingConventions(data, file, filePath);
                     checkVariableNamingConventions(data, file, filePath);
-                    // checkShowModalNamingConventions(data, file, filePath); // todo needs to be defined better
+                    // // checkShowModalNamingConventions(data, file, filePath); // todo needs to be defined better
                     checkForRenderFunction(data, filePath);
                     checkForBooleanTruthyDetection(data, filePath);
                     checkForClassComponent(data, filePath);
@@ -303,6 +307,32 @@ function fixLodashImports(data, filePath) {
     }
     return data;
 }
+function kebabToUpperCase(str) {
+    // Split the string into individual words
+    const words = str.split("-");
+    // Capitalize each word (except the first one)
+    const upperCamelCaseWords = words.map((word) => {
+        return word.charAt(0).toUpperCase() + word.slice(1);
+    });
+    // Join the words and return the upper camel case string
+    return upperCamelCaseWords.join("");
+}
+function listMissingFontawesomeImports(data) {
+    let regex = /icon="[^"]*"/g;
+    let matches = data.match(regex);
+    matches === null || matches === void 0 ? void 0 : matches.forEach((match) => {
+        let iconString = match.replace('icon="', "").replace('"', "");
+        let importName = "fa" + kebabToUpperCase(iconString);
+        if (!allImportNames.includes(importName) &&
+            !setupIconsContent.includes(importName)) {
+            errors.missingFontawesomeIconImports.push({
+                error: `Missing import for ${importName}`,
+            });
+            allImportNames.push(importName);
+        }
+    });
+    return data;
+}
 function makeCommentsSentenceCase(data) {
     // CRITERIA: All comments should be sentence case
     const singleLineCommentPattern = /\/\/(?!https?:\/\/).*$/gm;
@@ -341,7 +371,27 @@ function logErrors(type, errorSectionName, errors) {
     writeOutput(type, errorSectionName.toUpperCase());
     writeOutput(type, char.repeat(errorSectionName.length));
     errors.forEach((err) => {
-        console.log("\t" + err.file + (err.error ? ` - ${err.error}` : ""));
+        var _a;
+        console.log("\t" +
+            ((_a = err.file) !== null && _a !== void 0 ? _a : "") +
+            (err.error && err.file ? " - " : "") +
+            (err.error ? `${err.error}` : ""));
+    });
+}
+function getSetupIconsContent() {
+    return __awaiter(this, void 0, void 0, function* () {
+        return new Promise((resolve, reject) => {
+            let filePath = folderPath + "/setupIcons.ts";
+            fs.readFile(filePath, "utf8", (err, data) => {
+                if (err) {
+                    reject(`Error reading file: ${filePath}`);
+                }
+                else {
+                    setupIconsContent = data;
+                    resolve(true);
+                }
+            });
+        });
     });
 }
 function run() {
@@ -351,35 +401,37 @@ function run() {
             return;
         }
         writeOutput("info", "Running code checker...");
-        return readTSXFilesRecursively(folderPath)
-            .then(() => {
-            let errorCount = 0;
-            Object.keys(errors).forEach((key) => {
-                // @ts-ignore
-                let errorArray = errors[key];
-                errorCount += errorArray === null || errorArray === void 0 ? void 0 : errorArray.length;
-                errorArray.length > 0 &&
-                    logErrors("error", keyToHumanReadable(key), errorArray);
-            });
-            Object.keys(warnings).forEach((key) => {
-                // @ts-ignore
-                let warningArray = warnings[key];
-                warningArray.length > 0 &&
-                    logErrors("warning", keyToHumanReadable(key), warningArray);
-            });
-            if (errorCount === 0) {
-                writeOutput("info", "Done running code checker.");
-                process.exit(0);
-            }
-            else {
-                writeOutput("error", "Done running code checker.");
+        return getSetupIconsContent().then(() => __awaiter(this, void 0, void 0, function* () {
+            return readTSXFilesRecursively(folderPath)
+                .then(() => {
+                let errorCount = 0;
+                Object.keys(errors).forEach((key) => {
+                    // @ts-ignore
+                    let errorArray = errors[key];
+                    errorCount += errorArray === null || errorArray === void 0 ? void 0 : errorArray.length;
+                    errorArray.length > 0 &&
+                        logErrors("error", keyToHumanReadable(key), errorArray);
+                });
+                Object.keys(warnings).forEach((key) => {
+                    // @ts-ignore
+                    let warningArray = warnings[key];
+                    warningArray.length > 0 &&
+                        logErrors("warning", keyToHumanReadable(key), warningArray);
+                });
+                if (errorCount === 0) {
+                    writeOutput("info", "Done running code checker.");
+                    process.exit(0);
+                }
+                else {
+                    writeOutput("error", "Done running code checker.");
+                    process.exit(1);
+                }
+            })
+                .catch((err) => {
+                writeOutput("error", err);
                 process.exit(1);
-            }
-        })
-            .catch((err) => {
-            writeOutput("error", err);
-            process.exit(1);
-        });
+            });
+        }));
     });
 }
 run();
