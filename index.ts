@@ -1,6 +1,10 @@
 const fs = require("fs");
 const path = require("path");
 const yargs = require("yargs");
+const utils = require("./src/utils");
+const namingConventionUtils = require("./src/namingConventionUtils");
+const commentUtils = require("./src/commentUtils");
+const importUtils = require("./src/importUtils");
 
 const args = yargs
   .options({
@@ -50,61 +54,8 @@ let warnings: {
   forgottenTodos: [],
 };
 
-const camelCaseRegex = /^[a-z][A-Za-z0-9]*$/;
-const upperCamelCaseRegex = /^[A-Z][A-Za-z0-9]*$/;
-const upperSnakeCaseRegex = /^[A-Z0-9_]+$/;
-
 let allImportNames: string[] = [];
 let setupIconsContent: any;
-function keyToHumanReadable(key: string | undefined): string {
-  if (!key) return "";
-
-  // @ts-ignore
-  let keyHumanReadable = key.replaceAll("_", " ");
-  keyHumanReadable = keyHumanReadable.replaceAll("sender", "collection");
-  keyHumanReadable = keyHumanReadable.replaceAll("receiver", "delivery");
-  keyHumanReadable = keyHumanReadable.replaceAll("-", " ");
-
-  // camel case to sentence case
-  keyHumanReadable = keyHumanReadable.replace(/([A-Z])/g, " $1").trim();
-
-  let sentenceCaseKey =
-    keyHumanReadable.charAt(0).toUpperCase() +
-    keyHumanReadable.slice(1).toLowerCase();
-
-  sentenceCaseKey = sentenceCaseKey.replaceAll("Bob box", "Bob Box");
-  sentenceCaseKey = sentenceCaseKey.replaceAll("Bob pay", "Bob Pay");
-  sentenceCaseKey = sentenceCaseKey.replaceAll("Bob go", "Bob Go");
-
-  return sentenceCaseKey;
-}
-
-function writeOutput(
-  type: "success" | "error" | "warning" | "info",
-  content: any
-) {
-  let colors = {
-    success: "\x1b[32m",
-    error: "\x1b[31m",
-    warning: "\x1b[33m",
-    info: "\x1b[36m",
-  };
-  console.log(colors[type], content);
-}
-
-function isInterfaceFile(filePath: string) {
-  return filePath.indexOf("src/interfaces") > -1;
-}
-
-function isComponentFile(data: string, filePath: string) {
-  return (
-    filePath.endsWith(".tsx") &&
-    !isInterfaceFile(filePath) &&
-    (filePath.indexOf("/pages/") > -1 ||
-      filePath.indexOf("/components/") > -1) &&
-    data.indexOf("function render") > -1
-  );
-}
 
 function processFileContents(folderPath: any, file: any) {
   return new Promise((resolve, reject) => {
@@ -123,24 +74,29 @@ function processFileContents(folderPath: any, file: any) {
         if (err) {
           reject(`Error reading file: ${filePath}`);
         } else {
-          // Automatic updates to files
+          /* --------------------------------*/
+          /* AUTOMATIC UPDATES               */
+          /* --------------------------------*/
           data = replaceBracketPattern(data);
           data = addRenderMethodsComment(data, filePath);
           data = fixLodashImports(data, filePath);
           data = listMissingFontawesomeImports(data);
           // // data = makeCommentsSentenceCase(data); // todo needs more testing
-          // // Checks for files
+
+          /* --------------------------------*/
+          /* CHECKS                          */
+          /* --------------------------------*/
           checkStateVariableNamingConventions(data, file, filePath);
           checkVariableNamingConventions(data, file, filePath);
-          // // checkShowModalNamingConventions(data, file, filePath); // todo needs to be defined better
+          // checkShowModalNamingConventions(data, file, filePath); // todo needs to be defined better
           checkForRenderFunction(data, filePath);
           checkForBooleanTruthyDetection(data, filePath);
           checkForClassComponent(data, filePath);
           checkForgottenTodos(data, filePath);
-          if (isInterfaceFile(filePath)) {
+          if (utils.isInterfaceFile(filePath)) {
             checkInterfaceNamingConventions(data, file);
           }
-          if (isComponentFile(data, filePath)) {
+          if (utils.isComponentFile(data, filePath)) {
             checkComponentNamingConventions(data, file, filePath);
           }
           fs.writeFile(filePath, data, "utf8", (err: any) => {
@@ -169,56 +125,72 @@ async function readTSXFilesRecursively(folderPath: string) {
 }
 
 function replaceBracketPattern(data: string) {
-  // CRITERIA: Object string props should not have curly braces if no logical operations are performed on the string
-  const regex = /={"([^+}]+)"}/g;
+  try {
+    // CRITERIA: Object string props should not have curly braces if no logical operations are performed on the string
+    const regex = /={"([^+}]+)"}/g;
 
-  const replacedContent = data.replace(regex, '="$1"');
-
-  return replacedContent;
+    data = data.replace(regex, '="$1"');
+  } catch (e) {
+    utils.writeOutput("error", `Could not replace bracket pattern: ${e}`);
+  }
+  return data;
 }
 
 function checkForRenderFunction(data: string, filePath: string) {
-  // CRITERIA: All components should have a render function
-  if (
-    isComponentFile(data, filePath) &&
-    data.indexOf("function render()") === -1
-  ) {
-    warnings.filesMissingRenderFunction.push({ file: filePath });
+  try {
+    // CRITERIA: All components should have a render function
+    if (
+      utils.isComponentFile(data, filePath) &&
+      data.indexOf("function render()") === -1
+    ) {
+      warnings.filesMissingRenderFunction.push({ file: filePath });
+    }
+  } catch (e) {
+    utils.writeOutput("error", `Could not check for render function: ${e}`);
   }
 }
 function checkForBooleanTruthyDetection(data: string, filePath: string) {
-  // CRITERIA: Prefer boolean truthy detection Boolean(x) over double !!
-  if (data.indexOf("!!") > -1) {
-    warnings.incorrectTruthy.push({ file: filePath });
+  try {
+    // CRITERIA: Prefer boolean truthy detection Boolean(x) over double !!
+    if (data.indexOf("!!") > -1) {
+      warnings.incorrectTruthy.push({ file: filePath });
+    }
+  } catch (e) {
+    utils.writeOutput(
+      "error",
+      `Could not check for boolean truthy detection: ${e}`
+    );
   }
 }
 
 function checkForClassComponent(data: string, filePath: string) {
-  // CRITERIA: Make use of functional components instead of class components
-  if (data.indexOf("extends Component") > -1) {
-    warnings.classComponents.push({ file: filePath });
+  try {
+    // CRITERIA: Make use of functional components instead of class components
+    if (data.indexOf("extends Component") > -1) {
+      warnings.classComponents.push({ file: filePath });
+    }
+  } catch (e) {
+    utils.writeOutput("error", `Could not check for class component: ${e}`);
   }
 }
 
 function checkInterfaceNamingConventions(data: string, file: string) {
-  // CRITERIA: Interface file name should follow the pattern <someInterfaceName>.interface.ts
-  const interfaceFileNamePattern = /^[a-z][A-Za-z]*\.interface\.ts$/;
+  try {
+    // CRITERIA: Interface file name should follow the pattern <someInterfaceName>.interface.ts
+    if (!namingConventionUtils.isValidInterfaceFileName(file)) {
+      errors.incorrectInterfaceFileNames.push({ file });
+    }
 
-  if (!interfaceFileNamePattern.test(file)) {
-    errors.incorrectInterfaceFileNames.push({ file });
-  }
-
-  // CRITERIA: Interface name should follow the pattern I<SomeInterfaceName>
-  const interfaceNamePattern = /^I[A-Z][a-zA-Z]*$/;
-  let interfaceNameStartIndex =
-    data.indexOf("export interface ") + "export interface ".length;
-
-  let substring = data.slice(interfaceNameStartIndex);
-
-  let interfaceNameEndIndex = substring.indexOf(" ");
-  let interfaceName = substring.slice(0, interfaceNameEndIndex);
-  if (!interfaceNamePattern.test(interfaceName)) {
-    errors.incorrectInterfaceNames.push({ file, error: interfaceName });
+    // CRITERIA: Interface name should follow the pattern I<SomeInterfaceName>
+    let interfaceName = utils.getInterfaceName(data);
+    if (!namingConventionUtils.isValidInterfaceName(interfaceName)) {
+      errors.incorrectInterfaceNames.push({ file, error: interfaceName });
+    }
+  } catch (e) {
+    utils.writeOutput(
+      "error",
+      `Could not check interface naming conventions: ${e}`
+    );
   }
 }
 
@@ -227,37 +199,41 @@ function checkComponentNamingConventions(
   file: string,
   filePath: string
 ) {
-  if (filePath.indexOf("/pages") > -1) {
-    // CRITERIA: Page component file name should follow the pattern <SomePageName>Page.tsx
-    const pageComponentFileNamePattern = /^[A-Z][A-Za-z0-9]*\Page\.tsx$/;
-
-    if (!pageComponentFileNamePattern.test(file)) {
-      errors.incorrectComponentFileNames.push({ file });
-    }
-  } else if (filePath.indexOf("/components") > -1) {
-    // CRITERIA: Component file name should follow the pattern <SomeComponentName>.tsx
-    const componentFileNamePattern = /^[A-Z][A-Za-z0-9]*\.tsx$/;
-
-    if (!componentFileNamePattern.test(file)) {
-      errors.incorrectComponentFileNames.push({ file });
-    }
-  }
-
-  if (filePath.indexOf("/pages") > -1 || filePath.indexOf("/components") > -1) {
-    // CRITERIA: Component name should be upper camel case
-    const componentNamePattern = /function\s+([a-zA-Z0-9]*)\(/;
-    let match = componentNamePattern.exec(data);
-    if (match) {
-      let componentName = match[1];
-      if (!upperCamelCaseRegex.test(componentName)) {
-        errors.incorrectComponentNames.push({ file, error: componentName });
+  try {
+    if (filePath.indexOf("/pages") > -1) {
+      // CRITERIA: Page component file name should follow the pattern <SomePageName>Page.tsx
+      if (!namingConventionUtils.isValidPageComponentFileName(file)) {
+        errors.incorrectComponentFileNames.push({ file });
       }
-    } else {
-      errors.incorrectComponentNames.push({
-        file,
-        error: "No component name found",
-      });
+    } else if (filePath.indexOf("/components") > -1) {
+      // CRITERIA: Component file name should follow the pattern <SomeComponentName>.tsx
+      if (!namingConventionUtils.isValidComponentFileName(file)) {
+        errors.incorrectComponentFileNames.push({ file });
+      }
     }
+
+    if (
+      filePath.indexOf("/pages") > -1 ||
+      filePath.indexOf("/components") > -1
+    ) {
+      // CRITERIA: Component name should be upper camel case
+      let componentName = utils.getComponentName(data);
+      if (componentName) {
+        if (!namingConventionUtils.isValidComponentName(componentName)) {
+          errors.incorrectComponentNames.push({ file, error: componentName });
+        }
+      } else {
+        errors.incorrectComponentNames.push({
+          file,
+          error: "No component name found",
+        });
+      }
+    }
+  } catch (e) {
+    utils.writeOutput(
+      "error",
+      `Could not check component naming conventions: ${e}`
+    );
   }
 }
 
@@ -266,28 +242,27 @@ function checkStateVariableNamingConventions(
   file: string,
   filePath: string
 ) {
-  // CRITERIA: State variables should be camel case
-  const stateVariableRegex = /(?<=\[\s*)(\w+)(?=\s*,\s*set\w+\s*\])/gm;
-
-  const variableNames = [];
-  let match;
-
-  while ((match = stateVariableRegex.exec(data)) !== null) {
-    variableNames.push(match[1]);
+  try {
+    // CRITERIA: State variables should be camel case
+    let variableNames: string[] = utils.getStateVariables(data);
+    variableNames.forEach((variableName) => {
+      if (
+        !namingConventionUtils.isValidStateVariableName(variableName) &&
+        variableName !== file.split(".tsx").join("") &&
+        !(filePath.includes("/Routes") && variableName.includes("Page"))
+      ) {
+        warnings.incorrectlyNamedStateVariables.push({
+          file: filePath,
+          error: variableName,
+        });
+      }
+    });
+  } catch (e) {
+    utils.writeOutput(
+      "error",
+      `Could not check state variable naming conventions: ${e}`
+    );
   }
-
-  variableNames.forEach((variableName) => {
-    if (
-      !camelCaseRegex.test(variableName) &&
-      variableName !== file.split(".tsx").join("") &&
-      !(filePath.includes("/Routes") && variableName.includes("Page"))
-    ) {
-      warnings.incorrectlyNamedStateVariables.push({
-        file: filePath,
-        error: variableName,
-      });
-    }
-  });
 }
 
 function checkVariableNamingConventions(
@@ -295,29 +270,28 @@ function checkVariableNamingConventions(
   file: string,
   filePath: string
 ) {
-  // CRITERIA: Variables should be camel case or upper snake case
-  const variableRegex = /\b(?:let|const|var)\s+([a-zA-Z_$][a-zA-Z0-9_$]*)\b/g;
+  try {
+    // CRITERIA: Variables should be camel case or upper snake case
+    let variableNames: string[] = utils.getVariables(data);
 
-  const variableNames = [];
-  let match;
-
-  while ((match = variableRegex.exec(data)) !== null) {
-    variableNames.push(match[1]);
+    variableNames.forEach((variableName) => {
+      if (
+        !namingConventionUtils.isValidVariableName(variableName) &&
+        variableName !== file.split(".tsx").join("") &&
+        !(filePath.includes("/Routes") && variableName.includes("Page"))
+      ) {
+        warnings.incorrectlyNamedVariables.push({
+          file: filePath,
+          error: variableName,
+        });
+      }
+    });
+  } catch (e) {
+    utils.writeOutput(
+      "error",
+      `Could not check variable naming conventions: ${e}`
+    );
   }
-
-  variableNames.forEach((variableName) => {
-    if (
-      !camelCaseRegex.test(variableName) &&
-      !upperSnakeCaseRegex.test(variableName) &&
-      variableName !== file.split(".tsx").join("") &&
-      !(filePath.includes("/Routes") && variableName.includes("Page"))
-    ) {
-      warnings.incorrectlyNamedVariables.push({
-        file: filePath,
-        error: variableName,
-      });
-    }
-  });
 }
 
 function checkShowModalNamingConventions(
@@ -325,104 +299,78 @@ function checkShowModalNamingConventions(
   file: string,
   filePath: string
 ) {
-  // CRITERIA: When naming state variables to show/hide modals, make use of const [modalToShow, setModalToShow] = useState<string>("") or const [shouldShowXModal, setShouldShowXModal] = useState<boolean>(false)
-  const stateVariableRegex = /(?<=\[\s*)(\w+)(?=\s*,\s*set\w+\s*\])/gm;
+  try {
+    // CRITERIA: When naming state variables to show/hide modals, make use of const [modalToShow, setModalToShow] = useState<string>("") or const [shouldShowXModal, setShouldShowXModal] = useState<boolean>(false)
+    const stateVariableRegex = /(?<=\[\s*)(\w+)(?=\s*,\s*set\w+\s*\])/gm;
 
-  let match;
+    let match;
 
-  const shouldShowXModalRegex = /^shouldShow[A-Z][a-zA-Z]*Modal$/;
+    const shouldShowXModalRegex = /^shouldShow[A-Z][a-zA-Z]*Modal$/;
 
-  while ((match = stateVariableRegex.exec(data)) !== null) {
-    let stateVariableName = match[1];
-    if (
-      stateVariableName.toLowerCase().includes("modal") &&
-      !shouldShowXModalRegex.test(stateVariableName) &&
-      stateVariableName !== "modalToShow"
-    ) {
-      warnings.incorrectlyNamedShowModalVariables.push({
-        file: filePath,
-        error: stateVariableName,
-      });
+    while ((match = stateVariableRegex.exec(data)) !== null) {
+      let stateVariableName = match[1];
+      if (
+        stateVariableName.toLowerCase().includes("modal") &&
+        !shouldShowXModalRegex.test(stateVariableName) &&
+        stateVariableName !== "modalToShow"
+      ) {
+        warnings.incorrectlyNamedShowModalVariables.push({
+          file: filePath,
+          error: stateVariableName,
+        });
+      }
     }
+  } catch (e) {
+    utils.writeOutput(
+      "error",
+      `Could not check modal naming conventions: ${e}`
+    );
   }
 }
 
 function addRenderMethodsComment(data: string, filePath: string) {
-  // CRITERIA: All components should have a comment indicating where the render methods section starts
-  let renderMethodsCommentText = `/* --------------------------------*/
-  /* RENDER METHODS */
-  /* --------------------------------*/`;
-
-  if (isComponentFile(data, filePath)) {
-    if (data.indexOf("RENDER METHODS") === -1) {
-      let firstRenderFunctionIndex = data.indexOf("function render");
-      if (firstRenderFunctionIndex > -1) {
-        const part1 = data.slice(0, firstRenderFunctionIndex);
-        const part2 = data.slice(firstRenderFunctionIndex);
-        data = part1 + renderMethodsCommentText + "\n" + "\n" + part2;
-      }
+  try {
+    // CRITERIA: All components should have a comment indicating where the render methods section starts
+    if (utils.isComponentFile(data, filePath)) {
+      data = commentUtils.addRenderMethodsComment(data);
     }
+  } catch (e) {
+    utils.writeOutput("error", `Could not add render methods comment: ${e}`);
   }
 
   return data;
 }
 
 function fixLodashImports(data: string, filePath: string) {
-  let importAll = 'import _ from "lodash";';
-  if (data.includes(importAll)) {
-    const lodashFunctionRegex = /_\.\w+[A-Za-z]*\(/g;
-    const lodashFunctions = data.match(lodashFunctionRegex);
-    let functionNames: string[] = [];
-    lodashFunctions?.forEach((functionString: string) => {
-      let functionName = functionString.substring(2, functionString.length - 1);
-      functionNames.push(functionName);
-
-      data = data.replace(functionString, functionName + "(");
-
-      let newImport = `import ${functionName} from "lodash/${functionName}";`;
-      if (!data.includes(newImport)) {
-        // prevent newImport from being added multiple times
-        data = data.replace(importAll, `${importAll}\n${newImport}`);
-      }
-    });
-
-    data = data.replace(importAll, "");
+  try {
+    data = importUtils.fixLodashImports(data);
+  } catch (e) {
+    utils.writeOutput("error", `Could not fix lodash imports: ${e}`);
   }
 
   return data;
 }
 
-function kebabToUpperCase(str: string) {
-  // Split the string into individual words
-  const words = str.split("-");
-
-  // Capitalize each word (except the first one)
-  const upperCamelCaseWords = words.map((word) => {
-    return word.charAt(0).toUpperCase() + word.slice(1);
-  });
-
-  // Join the words and return the upper camel case string
-  return upperCamelCaseWords.join("");
-}
-
 function listMissingFontawesomeImports(data: string) {
-  let regex = /icon="[^"]*"/g;
-
-  let matches = data.match(regex);
-  matches?.forEach((match: string) => {
-    let iconString = match.replace('icon="', "").replace('"', "");
-    let importName = "fa" + kebabToUpperCase(iconString);
-
-    if (
-      !allImportNames.includes(importName) &&
-      !setupIconsContent.includes(importName)
-    ) {
-      errors.missingFontawesomeIconImports.push({
-        error: `Missing import for ${importName}`,
-      });
-      allImportNames.push(importName);
-    }
-  });
+  try {
+    let importNames = utils.getFontawesomeImportNames(data);
+    importNames?.forEach((importName: string) => {
+      if (
+        !allImportNames.includes(importName) &&
+        !setupIconsContent.includes(importName)
+      ) {
+        errors.missingFontawesomeIconImports.push({
+          error: `Missing import for ${importName}`,
+        });
+        allImportNames.push(importName);
+      }
+    });
+  } catch (e) {
+    utils.writeOutput(
+      "error",
+      `Could not list missing Fontawesome imports: ${e}`
+    );
+  }
 
   return data;
 }
@@ -460,31 +408,13 @@ function makeCommentsSentenceCase(data: string) {
 }
 
 function checkForgottenTodos(data: string, filePath: string) {
-  const regex = /\bTODO\b/gi;
-  let matches = data.match(regex);
-  if (matches) {
-    warnings.forgottenTodos.push({ file: filePath });
+  try {
+    if (commentUtils.containsTodo(data)) {
+      warnings.forgottenTodos.push({ file: filePath });
+    }
+  } catch (e) {
+    utils.writeOutput("error", `Could not check forgotten todos: ${e}`);
   }
-}
-
-function logErrors(
-  type: "error" | "warning",
-  errorSectionName: string,
-  errors: IErrorObject[]
-) {
-  let char = "-";
-  writeOutput(type, char.repeat(errorSectionName.length));
-  writeOutput(type, errorSectionName.toUpperCase());
-  writeOutput(type, char.repeat(errorSectionName.length));
-
-  errors.forEach((err) => {
-    console.log(
-      "\t" +
-        (err.file ?? "") +
-        (err.error && err.file ? " - " : "") +
-        (err.error ? `${err.error}` : "")
-    );
-  });
 }
 
 async function getSetupIconsContent() {
@@ -503,10 +433,10 @@ async function getSetupIconsContent() {
 
 async function run() {
   if (!args.folderPath) {
-    writeOutput("error", "No path specified");
+    utils.writeOutput("error", "No path specified");
     return;
   }
-  writeOutput("info", "Running code checker...");
+  utils.writeOutput("info", "Running code checker...");
   return getSetupIconsContent().then(async () => {
     return readTSXFilesRecursively(folderPath)
       .then(() => {
@@ -518,25 +448,29 @@ async function run() {
           errorCount += errorArray?.length;
 
           errorArray.length > 0 &&
-            logErrors("error", keyToHumanReadable(key), errorArray);
+            utils.logErrors("error", utils.keyToHumanReadable(key), errorArray);
         });
         Object.keys(warnings).forEach((key) => {
           // @ts-ignore
           let warningArray = warnings[key];
           warningArray.length > 0 &&
-            logErrors("warning", keyToHumanReadable(key), warningArray);
+            utils.logErrors(
+              "warning",
+              utils.keyToHumanReadable(key),
+              warningArray
+            );
         });
 
         if (errorCount === 0) {
-          writeOutput("info", "Done running code checker.");
+          utils.writeOutput("info", "Done running code checker.");
           process.exit(0);
         } else {
-          writeOutput("error", "Done running code checker.");
+          utils.writeOutput("error", "Done running code checker.");
           process.exit(1);
         }
       })
       .catch((err) => {
-        writeOutput("error", err);
+        utils.writeOutput("error", err);
         process.exit(1);
       });
   });
