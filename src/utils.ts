@@ -119,7 +119,8 @@ function getStateVariables(data: string) {
 }
 
 function getVariables(data: string) {
-  const variableRegex = /\b(?:let|const|var)\s+([a-zA-Z_$][a-zA-Z0-9_$]*)\b/g;
+  const variableRegex = /\b(?:let|const|var)\s+([a-zA-Z_$][a-zA-Z0-9_$]*)\b(?!\s*=\s*(?:lazy\(|createContext|require))/g;
+
 
   const variableNames = [];
   let match;
@@ -143,6 +144,20 @@ function getFontawesomeImportNames(data: string) {
   return iconImports;
 }
 
+function insertSubstring(originalString: string, insertString: string, position: number) {
+  if (position < 0) {
+      position = 0;
+  }
+  if (position > originalString.length) {
+      position = originalString.length;
+  }
+
+  const before = originalString.slice(0, position);
+  const after = originalString.slice(position);
+
+  return before + insertString + after;
+}
+
 export {
   camelCaseRegex,
   upperCamelCaseRegex,
@@ -158,4 +173,5 @@ export {
   getStateVariables,
   getVariables,
   getFontawesomeImportNames,
+  insertSubstring
 };

@@ -44,6 +44,7 @@ let warnings: {
   incorrectTruthy: IErrorObject[];
   classComponents: IErrorObject[];
   forgottenTodos: IErrorObject[];
+  missingPropTypes: IErrorObject[];
 } = {
   filesMissingRenderFunction: [],
   incorrectlyNamedVariables: [],
@@ -52,6 +53,7 @@ let warnings: {
   incorrectTruthy: [],
   classComponents: [],
   forgottenTodos: [],
+  missingPropTypes: [],
 };
 
 let allImportNames: string[] = [];
@@ -81,6 +83,7 @@ function processFileContents(folderPath: any, file: any) {
           data = addRenderMethodsComment(data, filePath);
           data = fixLodashImports(data, filePath);
           data = listMissingFontawesomeImports(data);
+          data = fixIProps(data);
           // // data = makeCommentsSentenceCase(data); // todo needs more testing
 
           /* --------------------------------*/
@@ -99,6 +102,7 @@ function processFileContents(folderPath: any, file: any) {
           if (utils.isComponentFile(data, filePath)) {
             checkComponentNamingConventions(data, file, filePath);
           }
+          checkIfPropsHaveType(data, file, filePath);
           fs.writeFile(filePath, data, "utf8", (err: any) => {
             if (err) {
               reject(`Error writing to file: ${filePath}`);
@@ -237,6 +241,21 @@ function checkComponentNamingConventions(
   }
 }
 
+function checkIfPropsHaveType(data: string, file: string, filePath: string) {
+  try {
+    const componentName = utils.getComponentName(data);
+    const propString = `${componentName}(props: any)`;
+    if (data.indexOf(propString) > -1) {
+      warnings.missingPropTypes.push({
+        file,
+        error: "No type definition for props (props: any)",
+      });
+    }
+  } catch (e) {
+    utils.writeOutput("error", `Could not check component prop type: ${e}`);
+  }
+}
+
 function checkStateVariableNamingConventions(
   data: string,
   file: string,
@@ -370,6 +389,42 @@ function listMissingFontawesomeImports(data: string) {
       "error",
       `Could not list missing Fontawesome imports: ${e}`
     );
+  }
+
+  return data;
+}
+
+function fixIProps(data: string) {
+  try {
+    let componentName = utils.getComponentName(data);
+
+    const regex = new RegExp(
+      `function ${componentName}\\s*\\(props:\\s*\\{[\\n\\sa-zA-z?:;()|&=>,{}?]*}\\) {`,
+      "m"
+    );
+    const match = data.match(regex);
+
+    if (match) {
+      let propsObject = match[0].trim();
+      propsObject = propsObject
+        .split(`function ${componentName}(props:`)
+        .join("")
+        .split(") {")
+        .join("");
+
+      const iProps = `interface IProps ${propsObject}\n\n`;
+      let newData = data.replace(propsObject, "IProps");
+      let functionIndex = data.indexOf(
+        `export default function ${componentName}`
+      );
+      if (functionIndex === -1) {
+        functionIndex = data.indexOf(`function ${componentName}`);
+      }
+      newData = utils.insertSubstring(newData, iProps, functionIndex);
+      data = newData;
+    }
+  } catch (e) {
+    utils.writeOutput("error", `Could not fix IProps: ${e}`);
   }
 
   return data;

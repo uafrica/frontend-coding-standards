@@ -1,6 +1,6 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.getFontawesomeImportNames = exports.getVariables = exports.getStateVariables = exports.logErrors = exports.getComponentName = exports.getInterfaceName = exports.isComponentFile = exports.isInterfaceFile = exports.writeOutput = exports.kebabToUpperCase = exports.keyToHumanReadable = exports.upperSnakeCaseRegex = exports.upperCamelCaseRegex = exports.camelCaseRegex = void 0;
+exports.insertSubstring = exports.getFontawesomeImportNames = exports.getVariables = exports.getStateVariables = exports.logErrors = exports.getComponentName = exports.getInterfaceName = exports.isComponentFile = exports.isInterfaceFile = exports.writeOutput = exports.kebabToUpperCase = exports.keyToHumanReadable = exports.upperSnakeCaseRegex = exports.upperCamelCaseRegex = exports.camelCaseRegex = void 0;
 const camelCaseRegex = /^[a-z][A-Za-z0-9]*$/;
 exports.camelCaseRegex = camelCaseRegex;
 const upperCamelCaseRegex = /^[A-Z][A-Za-z0-9]*$/;
@@ -102,7 +102,7 @@ function getStateVariables(data) {
 }
 exports.getStateVariables = getStateVariables;
 function getVariables(data) {
-    const variableRegex = /\b(?:let|const|var)\s+([a-zA-Z_$][a-zA-Z0-9_$]*)\b/g;
+    const variableRegex = /\b(?:let|const|var)\s+([a-zA-Z_$][a-zA-Z0-9_$]*)\b(?!\s*=\s*(?:lazy\(|createContext|require))/g;
     const variableNames = [];
     let match;
     while ((match = variableRegex.exec(data)) !== null) {
@@ -123,3 +123,15 @@ function getFontawesomeImportNames(data) {
     return iconImports;
 }
 exports.getFontawesomeImportNames = getFontawesomeImportNames;
+function insertSubstring(originalString, insertString, position) {
+    if (position < 0) {
+        position = 0;
+    }
+    if (position > originalString.length) {
+        position = originalString.length;
+    }
+    const before = originalString.slice(0, position);
+    const after = originalString.slice(position);
+    return before + insertString + after;
+}
+exports.insertSubstring = insertSubstring;
